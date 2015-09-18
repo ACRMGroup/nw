@@ -696,6 +696,8 @@ aligned\n\n", MIN(nchain1, nchain2));
                   {
                      if(align1[j] == align2[j])
                         fputc('|', stdout);
+                     else if(blCalcMDMScore(align1[j], align2[j]) > 0)
+                        fputc('.', stdout);
                      else
                         fputc(' ', stdout);
                   }
@@ -717,6 +719,8 @@ aligned\n\n", MIN(nchain1, nchain2));
             {
                if(align1[j] == align2[j])
                   fputc('|', stdout);
+               else if(blCalcMDMScore(align1[j], align2[j]) > 0)
+                  fputc('.', stdout);
                else
                   fputc(' ', stdout);
             }
