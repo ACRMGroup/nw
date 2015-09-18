@@ -3,11 +3,11 @@
    Program:    nw
    File:       nw.c
    
-   Version:    V3.10
-   Date:       21.01.98
+   Version:    V3.11
+   Date:       28.09.00
    Function:   Do Needleman & Wunsch sequence alignment
    
-   Copyright:  (c) Dr. Andrew C. R. Martin / UCL 1990-8
+   Copyright:  (c) Dr. Andrew C. R. Martin / UCL 1990-2000
    Author:     Dr. Andrew C. R. Martin
    Address:    Biomolecular Structure & Modelling Unit,
                Department of Biochemistry & Molecular Biology,
@@ -17,7 +17,7 @@
                WC1E 6BT.
    Phone:      (Home) +44 (0)1372 275775
                (Work) +44 (0)171 387 7050 X 3284
-   EMail:      martin@biochem.ucl.ac.uk
+   EMail:      martin@bioinf.org.uk
                
 **************************************************************************
 
@@ -82,6 +82,8 @@
    V3.10 21.01.98   -i flag was causing error messages in calculation of
                     max possible score for alignment. No longer prints
                     homologies when using an identity matrix
+   V3.11 28.09.00   Modified to allow user specified extension penalty
+                    and to call affinealine() rather than aline()
 
 *************************************************************************/
 /* Includes
@@ -98,7 +100,7 @@
 /************************************************************************/
 /* Defines and macros
 */
-#define VERSION  "3.10"
+#define VERSION  "3.11"
 #define MDMFILE  "mdm78.mat"
 #define MAXCHAIN 16
 #define MAXBUFF  160
@@ -115,12 +117,12 @@
 */
 int main(int argc, char **argv);
 BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty, 
-                  BOOL *verbose, char *mdmfile, 
+                  int *ExtPenalty, BOOL *verbose, char *mdmfile, 
                   char *infile1, char *infile2, int *quiet,
                   int *AlignStyle, char *AlignFile);
 void Usage(void);
 BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty, 
-                 char *mdmfile, BOOL verbose, int quiet,
+                 int ExtPenalty, char *mdmfile, BOOL verbose, int quiet,
                  int AlignStyle, FILE *out);
 void WritePIRAlignment(FILE *out, SEQINFO SeqInfo1, SEQINFO SeqInfo2,
                        STRINGLIST *Alignments1, STRINGLIST *Alignments2);
@@ -149,6 +151,7 @@ int main(int argc, char **argv)
    BOOL identity,
         verbose;
    int  GapPenalty,
+        ExtPenalty,
         AlignStyle,
         quiet;
    char mdmfile[MAXBUFF],
@@ -163,11 +166,13 @@ int main(int argc, char **argv)
    quiet      = 0;
    verbose    = FALSE;
    GapPenalty = 5;
+   ExtPenalty = 0;
    AlignStyle = ALIGN_NONE;
    strcpy(mdmfile,MDMFILE);
 
-   if(ParseCmdLine(argc, argv, &identity, &GapPenalty, &verbose, mdmfile, 
-                   infile1, infile2, &quiet, &AlignStyle, AlignFile))
+   if(ParseCmdLine(argc, argv, &identity, &GapPenalty, &ExtPenalty,
+                   &verbose, mdmfile, infile1, infile2, &quiet, 
+                   &AlignStyle, AlignFile))
    {
       /* Open the input PIR files                                       */
       if((in1=fopen(infile1,"r"))==NULL)
@@ -189,8 +194,8 @@ int main(int argc, char **argv)
          }
       }
 
-      DoAlignment(in1, in2, identity, GapPenalty, mdmfile, verbose, quiet,
-                  AlignStyle, out);
+      DoAlignment(in1, in2, identity, GapPenalty, ExtPenalty, mdmfile, 
+                  verbose, quiet, AlignStyle, out);
    }
    else
    {
@@ -203,14 +208,15 @@ int main(int argc, char **argv)
 
 /************************************************************************/
 /*>BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, 
-                     int *GapPenalty, BOOL *verbose, char *mdmfile, 
-                     char *infile1, char *infile2, int *quiet,
-                     int *AlignStyle, char *AlignFile)
+                     int *GapPenalty, int *ExtPenalty, BOOL *verbose, 
+                     char *mdmfile, char *infile1, char *infile2, 
+                     int *quiet, int *AlignStyle, char *AlignFile)
    ----------------------------------------------------------------
    Input:   int    argc         Argument count
             char   **argv       Argument array
    Output:  BOOL   *identity    Use an identity matrix
             int    *GapPenalty  Specified gap penalty
+            int    *ExtPenalty  Specified extension penalty
             BOOL   *verbose     Switch on verbose mode in alignment
             char   *mdmfile     Mutation data matrix file
             char   *infile1     First sequence file
@@ -225,9 +231,10 @@ int main(int argc, char **argv)
    07.11.94 Original    By: ACRM
    02.07.96 Changed quiet to int so when = 2 is completely silent
             Handles -qq
+   28.09.00 Added ExtPenalty
 */
 BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty, 
-                  BOOL *verbose, char *mdmfile, 
+                  int *ExtPenalty, BOOL *verbose, char *mdmfile, 
                   char *infile1, char *infile2, int *quiet,
                   int *AlignStyle, char *AlignFile)
 {
@@ -260,6 +267,14 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
             if(argc < 0)
                return(FALSE);
             if((sscanf(argv[0], "%d", GapPenalty)) == 0)
+               return(FALSE);
+            break;
+         case 'x':
+            argc--;
+            argv++;
+            if(argc < 0)
+               return(FALSE);
+            if((sscanf(argv[0], "%d", ExtPenalty)) == 0)
                return(FALSE);
             break;
          case 'm':
@@ -313,19 +328,23 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
    Prints a usage message
 
    07.11.95 Original    By: ACRM
-   21.11.95 Wan't printing the MDMFILE variable
+   21.11.95 Wasn't printing the MDMFILE variable
    02.07.96 Added -qq (silent mode)
+   28.09.00 Added -x
 */
 void Usage(void)
 {
-   fprintf(stderr,"\nNW %s (c) 1990-1997 Dr. Andrew C.R. Martin, \
-NIMR/SciTech Software/UCL\n", VERSION);
+   fprintf(stderr,"\nNW %s (c) 1990-2000 Dr. Andrew C.R. Martin, \
+NIMR/SciTech Software/UCL/Reading\n", VERSION);
 
-   fprintf(stderr,"\nUsage: nw [-g <n>][-i][-m <matrix>][-v][-q[q]]\
-[-p <file>] <file1> <file2>\n");
+   fprintf(stderr,"\nUsage: nw [-g <n>][-x <n>[-i][-m <matrix>][-v]\
+[-q[q]][-p <file>] <file1> <file2>\n");
    fprintf(stderr,"       -g <n>      Specify the gap penalty\n");
    fprintf(stderr,"                   [Default: 5 for matrix or 1 for \
 identity matrix]\n");
+   fprintf(stderr,"       -x <n>      Specify the gap extension \
+penalty\n");
+   fprintf(stderr,"                   [Default: 0]\n");
    fprintf(stderr,"       -i          Use an identity matrix\n");
    fprintf(stderr,"       -m <matrix> Specify the mutation matrix \
 [Default: %s]\n",MDMFILE);
@@ -349,8 +368,8 @@ each file is aligned,\n");
 
 /************************************************************************/
 /*>BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty, 
-                    char *mdmfile, BOOL verbose, int quiet,
-                    int AlignStyle, FILE *out)
+                    int ExtPenalty, char *mdmfile, BOOL verbose, 
+                    int quiet, int AlignStyle, FILE *out)
    ---------------------------------------------------------------------
    Main routine which does the alignment work. Reads the sequence files
    and calls the alignment code for each pair of chains in turn.
@@ -367,12 +386,15 @@ each file is aligned,\n");
             multiple interpretations of % identity :-)
    02.07.96 Changed quiet to int so when = 2 is completely silent
             Fixed handling of quiet mode
-   11.07.96 Calculates % homology
+   11.07.96 Calculates % 'homology'
    01.11.96 Made the output easier to parse. Added % id against
             first sequence length
+   28.09.00 Changed to call affinealign(), ExtPenalty passed in as
+            a parameter. Moved call to GetIndelInfo() so it works
+            properly with -q. Changed 'homology' to 'similarity'
 */
 BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty, 
-                 char *mdmfile, BOOL verbose, int quiet,
+                 int ExtPenalty, char *mdmfile, BOOL verbose, int quiet,
                  int AlignStyle, FILE *out)
 {
    char       *seq1[MAXCHAIN],              /* Sequences to align       */
@@ -473,6 +495,7 @@ BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty,
       printf("-----------------------\n");
       printf("Mutation Matrix:      %s\n",(identity) ?"Identity":mdmfile);
       printf("Gap Penalty:          %d\n",GapPenalty);
+      printf("Extension Penalty:    %d\n",ExtPenalty);
       printf("Verbose mode:         %s\n",(verbose)  ?"ON"      :"OFF");
 
       if((nchain1 > 1 || nchain2 > 1) && (nchain1 != nchain2))
@@ -546,9 +569,9 @@ aligned\n\n", MIN(nchain1, nchain2));
       len1 = strlen(seq1[chain]);
       len2 = strlen(seq2[chain]);
       
-      score = align(seq1[chain], len1, seq2[chain], len2, 
-                    verbose, identity, GapPenalty, align1, align2, 
-                    &align_len);
+      score = affinealign(seq1[chain], len1, seq2[chain], len2, 
+                          verbose, identity, GapPenalty, ExtPenalty,
+                          align1, align2, &align_len);
       if(!score)
       {
          fprintf(stderr,"No memory for alignment matrix\n");
@@ -609,15 +632,16 @@ aligned\n\n", MIN(nchain1, nchain2));
          for(j=0+offset; j<align_len; j++) printf("%c",align2[j]);
          printf("\n\n");
 
+      }  /* if(!quiet)                                                  */
+
+      if(quiet < 2)
+      {
          GetIndelInfo(align1, align2, &ndel, &ndelg, &nins, &ninsg);
          TotalNDel  += ndel;
          TotalNDelG += ndelg;
          TotalNIns  += nins;
          TotalNInsG += ninsg;
-      }  /* if(!quiet)                                                  */
 
-      if(quiet < 2)
-      {
          if(quiet)
             printf("CHAIN %d\n",chain+1);
             
@@ -629,7 +653,7 @@ aligned\n\n", MIN(nchain1, nchain2));
          printf("Score (normalised by alignment length)  NSCORE: \
 %.2f\n",       (REAL)score/((REAL)align_len * ((identity?2.0:1.0))));
          if(!identity)
-            printf("Percentage homology                      HOMOL: \
+            printf("Percentage similarity                    HOMOL: \
 %.2f%%\n",     (REAL)100.0 * (REAL)score/(REAL)IDScore);
          printf("Identity over alignment length         IDALLEN: \
 %.2f%%\n",     (REAL)100.0 * (REAL)NumId / (REAL)align_len);
@@ -660,7 +684,7 @@ aligned\n\n", MIN(nchain1, nchain2));
                 (REAL)TotalScore/
                 ((REAL)TotalLength * ((identity?2.0:1.0))));
          if(!identity)
-            printf("Total percentage homology                    \
+            printf("Total percentage similarity                  \
    HOMOLTOT: %.2f%%\n",
                 (REAL)100.0 * (REAL)TotalScore/(REAL)TotalIDScore);
          printf("Total Identity over alignment length         \
