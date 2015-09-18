@@ -3,8 +3,8 @@
    Program:    nw
    File:       nw.c
    
-   Version:    V3.14
-   Date:       11.03.15
+   Version:    V3.15
+   Date:       18.09.15
    Function:   Do Needleman & Wunsch sequence alignment
    
    Copyright:  (c) Dr. Andrew C. R. Martin / UCL 1990-2015
@@ -88,6 +88,7 @@
    V3.13 23.08.10   Added -s - Merged in from home version
    V3.14 11.03.15   Added -d - display matches in alignment
                     Initialized some variables
+   V3.15 18.09.15   Corrected to take just one argument with -s
 
 *************************************************************************/
 /* Includes
@@ -104,7 +105,7 @@
 /************************************************************************/
 /* Defines and macros
 */
-#define VERSION  "3.14"
+#define VERSION  "3.15"
 #define MDMFILE  "mdm78.mat"
 #define DEF_GAPPEN 10
 #define DEF_EXTPEN 2
@@ -269,6 +270,7 @@ int main(int argc, char **argv)
    09.06.08 Changed handling of defaults for ExtPenalty for -i
    23.08.10 Added ScoreOnly
    11.03.15 Added showMatches
+   18.09.15 Only needs one argument for -s ScoreOnly
 */
 BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty, 
                   int *ExtPenalty, BOOL *verbose, char *mdmfile, 
@@ -352,13 +354,25 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
       }
       else
       {
-         /* Check that there are 2 arguments left                       */
-         if(argc != 2)
-            return(FALSE);
-         
-         /* Copy them to the output variables                           */
-         strcpy(infile1, argv[0]);
-         strcpy(infile2, argv[1]);
+         if(*ScoreOnly)
+         {
+            /* Check that there is 1 argument left                      */
+            if(argc != 1)
+               return(FALSE);
+            
+            /* Copy them to the output variables                        */
+            strcpy(infile1, argv[0]);
+         }
+         else
+         {
+            /* Check that there are 2 arguments left                    */
+            if(argc != 2)
+               return(FALSE);
+            
+            /* Copy them to the output variables                        */
+            strcpy(infile1, argv[0]);
+            strcpy(infile2, argv[1]);
+         }
          
          return(TRUE);
       }
@@ -454,6 +468,7 @@ V3.12\n\n");
    11.03.15 Updated for BiopLib bl prefix
             Added showMatches code
             Initialized TotalNumId
+   18.09.15 Removed unused variable
 */
 BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty, 
                  int ExtPenalty, char *mdmfile, BOOL verbose, int quiet,
@@ -467,7 +482,7 @@ BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty,
               SeqInfo2;
    int        nchain1,
               nchain2,
-              ai, aj,
+              ai,
               i,  j,
               len1, len2,
               chain,
@@ -683,7 +698,7 @@ aligned\n\n", MIN(nchain1, nchain2));
          
          offset = 0;
          /* This loop prints seqa                                       */
-         for(i=0,ai=0,aj=0; ai<align_len; ai++)
+         for(i=0,ai=0; ai<align_len; ai++)
          {
             i++;
             /* If we've printed 80 chars, we print the equiv section of 
