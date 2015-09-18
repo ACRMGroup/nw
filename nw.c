@@ -86,7 +86,8 @@
                     Changed default gap penalties to 10/2 rather than 
                     5/0
    V3.13 23.08.10   Added -s - Merged in from home version
-   V3.14 11.03.15   Added -x - show matches in alignment
+   V3.14 11.03.15   Added -d - display matches in alignment
+                    Initialized some variables
 
 *************************************************************************/
 /* Includes
@@ -156,7 +157,7 @@ int FindSeqLenNoGaps(char *seq);
    09.06.08 Added "Error: " to error message
    09.06.08 Changed default gap penalties to something more sensible
    23.08.10 Added ScoreOnly
-   11.03.15 Added showMatches
+   11.03.15 Added showMatches and initialized out
 */
 int main(int argc, char **argv)
 {
@@ -172,7 +173,8 @@ int main(int argc, char **argv)
         infile1[MAXBUFF],
         infile2[MAXBUFF],
         AlignFile[MAXBUFF];
-   FILE *in1, *in2, *out;
+   FILE *in1, *in2, 
+        *out = stdout;
 
    
    /* Set default values                                                */
@@ -451,6 +453,7 @@ V3.12\n\n");
    09.06.08 Added "Error: " to error message
    11.03.15 Updated for BiopLib bl prefix
             Added showMatches code
+            Initialized TotalNumId
 */
 BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty, 
                  int ExtPenalty, char *mdmfile, BOOL verbose, int quiet,
@@ -477,7 +480,7 @@ BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty,
               NumId,
               NumAligned,
               AlnLenNoTail,
-              TotalNumId,
+              TotalNumId = 0,
               TotalLength = 0,
               TotalMinLength = 0,
               TotalAlnLength = 0,
