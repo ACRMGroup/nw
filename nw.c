@@ -3,11 +3,11 @@
    Program:    nw
    File:       nw.c
    
-   Version:    V3.12
-   Date:       09.06.08
+   Version:    V3.13
+   Date:       23.08.10
    Function:   Do Needleman & Wunsch sequence alignment
    
-   Copyright:  (c) Dr. Andrew C. R. Martin / UCL 1990-2008
+   Copyright:  (c) Dr. Andrew C. R. Martin / UCL 1990-2010
    Author:     Dr. Andrew C. R. Martin
    Address:    Biomolecular Structure & Modelling Unit,
                Department of Biochemistry & Molecular Biology,
@@ -85,6 +85,7 @@
    V3.12 09.06.08   Improved error messages; checks for zero length seqs
                     Changed default gap penalties to 10/2 rather than 
                     5/0
+   V3.13 23.08.10   Added -s - Merged in from home version
 
 *************************************************************************/
 /* Includes
@@ -101,7 +102,7 @@
 /************************************************************************/
 /* Defines and macros
 */
-#define VERSION  "3.12"
+#define VERSION  "3.13"
 #define MDMFILE  "mdm78.mat"
 #define DEF_GAPPEN 10
 #define DEF_EXTPEN 2
@@ -122,7 +123,7 @@ int main(int argc, char **argv);
 BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty, 
                   int *ExtPenalty, BOOL *verbose, char *mdmfile, 
                   char *infile1, char *infile2, int *quiet,
-                  int *AlignStyle, char *AlignFile);
+                  int *AlignStyle, char *AlignFile, BOOL *ScoreOnly);
 void Usage(void);
 BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty, 
                  int ExtPenalty, char *mdmfile, BOOL verbose, int quiet,
@@ -135,6 +136,8 @@ int FindAlnLenNoTail(char *align1, char *align2, int align_len);
 int CalcIDScore(char *seq1, char *seq2, BOOL identity);
 void GetIndelInfo(char *align1, char *align2, 
                   int *ndel, int *ndelg, int *nins, int *ninsg);
+BOOL ReadAlignmentAndScore(FILE *in);
+int FindSeqLenNoGaps(char *seq);
 
 
 /************************************************************************/
@@ -150,11 +153,13 @@ void GetIndelInfo(char *align1, char *align2,
    02.07.96 Changed quiet to int so when = 2 is completely silent
    09.06.08 Added "Error: " to error message
    09.06.08 Changed default gap penalties to something more sensible
+   23.08.10 Added ScoreOnly
 */
 int main(int argc, char **argv)
 {
    BOOL identity,
-        verbose;
+        verbose,
+        ScoreOnly = FALSE;
    int  GapPenalty,
         ExtPenalty,
         AlignStyle,
@@ -177,31 +182,45 @@ int main(int argc, char **argv)
 
    if(ParseCmdLine(argc, argv, &identity, &GapPenalty, &ExtPenalty,
                    &verbose, mdmfile, infile1, infile2, &quiet, 
-                   &AlignStyle, AlignFile))
+                   &AlignStyle, AlignFile, &ScoreOnly))
    {
-      /* Open the input PIR files                                       */
-      if((in1=fopen(infile1,"r"))==NULL)
+      if(ScoreOnly)
       {
-         fprintf(stderr,"Error: Unable to open input file %s.\n",infile1);
-         return(1);
-      }
-      if((in2=fopen(infile2,"r"))==NULL)
-      {
-         fprintf(stderr,"Error: Unable to open input file %s.\n",infile2);
-         return(1);
-      }
-      if(AlignStyle != ALIGN_NONE)
-      {
-         if((out=fopen(AlignFile,"w"))==NULL)
+         if((in1=fopen(infile1,"r"))==NULL)
          {
-            fprintf(stderr,"Error: Unable to open output file %s.\n",
-                    AlignFile);
+            fprintf(stderr,"Unable to open input file %s.\n",infile1);
             return(1);
          }
+         ReadAlignmentAndScore(in1);
       }
-
-      DoAlignment(in1, in2, identity, GapPenalty, ExtPenalty, mdmfile, 
-                  verbose, quiet, AlignStyle, out);
+      else
+      {
+         /* Open the input PIR files                                    */
+         if((in1=fopen(infile1,"r"))==NULL)
+         {
+            fprintf(stderr,"Error: Unable to open input file %s.\n",
+                    infile1);
+            return(1);
+         }
+         if((in2=fopen(infile2,"r"))==NULL)
+         {
+            fprintf(stderr,"Error: Unable to open input file %s.\n",
+                    infile2);
+            return(1);
+         }
+         if(AlignStyle != ALIGN_NONE)
+         {
+            if((out=fopen(AlignFile,"w"))==NULL)
+            {
+               fprintf(stderr,"Error: Unable to open output file %s.\n",
+                       AlignFile);
+               return(1);
+            }
+         }
+         
+         DoAlignment(in1, in2, identity, GapPenalty, ExtPenalty, mdmfile, 
+                     verbose, quiet, AlignStyle, out);
+      }
    }
    else
    {
@@ -216,7 +235,8 @@ int main(int argc, char **argv)
 /*>BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, 
                      int *GapPenalty, int *ExtPenalty, BOOL *verbose, 
                      char *mdmfile, char *infile1, char *infile2, 
-                     int *quiet, int *AlignStyle, char *AlignFile)
+                     int *quiet, int *AlignStyle, char *AlignFile,
+                     BOOL *ScoreOnly)
    ----------------------------------------------------------------
    Input:   int    argc         Argument count
             char   **argv       Argument array
@@ -230,6 +250,7 @@ int main(int argc, char **argv)
             int    *quiet       Do not display alignment, only score
             int    *AlignStyle  ALIGN_PIR = Create a PIR alignment file
             char   *AlignFile   Filename for output alignment file
+            BOOL   *ScoreOnly   Score an existing alignment
    Returns: BOOL                Success?
 
    Parse the command line
@@ -239,11 +260,12 @@ int main(int argc, char **argv)
             Handles -qq
    28.09.00 Added ExtPenalty
    09.06.08 Changed handling of defaults for ExtPenalty for -i
+   23.08.10 Added ScoreOnly
 */
 BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty, 
                   int *ExtPenalty, BOOL *verbose, char *mdmfile, 
                   char *infile1, char *infile2, int *quiet,
-                  int *AlignStyle, char *AlignFile)
+                  int *AlignStyle, char *AlignFile, BOOL *ScoreOnly)
 {
    BOOL UserGapPenalty = FALSE;
    BOOL UserExtPenalty = FALSE;
@@ -308,6 +330,9 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
                return(FALSE);
             strcpy(AlignFile, argv[0]);
             break;
+         case 's':
+            *ScoreOnly = TRUE;
+            break;
          default:
             return(FALSE);
             break;
@@ -342,14 +367,16 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
    21.11.95 Wasn't printing the MDMFILE variable
    02.07.96 Added -qq (silent mode)
    28.09.00 Added -x
+   23.08.10 Added -s
 */
 void Usage(void)
 {
-   fprintf(stderr,"\nNW %s (c) 1990-2008 Dr. Andrew C.R. Martin, \
+   fprintf(stderr,"\nNW %s (c) 1990-2010 Dr. Andrew C.R. Martin, \
 NIMR/SciTech Software/UCL/Reading\n", VERSION);
 
    fprintf(stderr,"\nUsage: nw [-g <n>][-x <n>[-i][-m <matrix>][-v]\
 [-q[q]][-p <file>] <file1> <file2>\n");
+   fprintf(stderr," -or-  nw -s <aligned-file>\n");
    fprintf(stderr,"       -g <n>      Specify the gap penalty\n");
    fprintf(stderr,"                   [Default: %d for matrix or 1 for \
 identity matrix]\n", DEF_GAPPEN);
@@ -369,7 +396,9 @@ information; use with -p)\n");
 file\n");
    fprintf(stderr,"       <file1>     First PIR sequence file\n");
    fprintf(stderr,"       <file2>     Second PIR sequence file\n");
-
+   fprintf(stderr,"       -s          Score an existing alignment \
+(in PIR format)\n");
+   
    fprintf(stderr,"\nNW is a simple Needleman and Wunsch sequence \
 alignment program taking\n");
    fprintf(stderr,"PIR format input files. Only the first sequence in \
@@ -993,5 +1022,75 @@ void GetIndelInfo(char *align1, char *align2,
          (*ninsg)++;
       prev = align2[i];
    }
+}
+
+/************************************************************************/
+/*>BOOL ReadAlignmentAndScore(FILE *in)
+   ------------------------------------
+   Input:    FILE        *in       PIR file pointer - file contains two
+                                   aligned sequences with headers
+   Returns:  BOOL                  Success?
+
+   28.03.03 Original    By: ACRM
+*/
+BOOL ReadAlignmentAndScore(FILE *in)
+{
+   char       *align1[MAXCHAIN],*align2[MAXCHAIN];
+   SEQINFO    SeqInfo;
+   int        nchain1, nchain2, align_len, NumId, NumAligned,
+              AlnLenNoTail, len1, len2;
+   BOOL       punct, error;
+
+   nchain1 = ReadPIR(in,TRUE,align1,MAXCHAIN,&SeqInfo,&punct,&error);
+   nchain2 = ReadPIR(in,TRUE,align2,MAXCHAIN,&SeqInfo,&punct,&error);
+   align_len = strlen(align1[0]);
+
+   if((nchain1!=1) || (nchain2!=1) || (align_len!=strlen(align2[0])))
+   {
+      fprintf(stderr,"Error: number of chains in each sequence must be \
+one and aligned\n");
+      fprintf(stderr,"sequences must be of the same length\n");
+      return(FALSE);
+   }
+
+   NumId              = CalcNumId(align1[0], align2[0], align_len);
+   NumAligned         = CalcNumAligned(align1[0], align2[0], align_len);
+   AlnLenNoTail       = FindAlnLenNoTail(align1[0], align2[0], align_len);
+   len1               = FindSeqLenNoGaps(align1[0]);
+   len2               = FindSeqLenNoGaps(align2[0]);
+
+   printf("Identity over alignment length         IDALLEN: \
+%.2f%%\n",     (REAL)100.0 * (REAL)NumId / (REAL)align_len);
+   printf("Identity over alignment with no tails IDNOTAIL: \
+%.2f%%\n",     (REAL)100.0 * (REAL)NumId / (REAL)AlnLenNoTail);
+   printf("Identity over shorter sequence         IDSHORT: \
+%.2f%%\n",     (REAL)100.0 * (REAL)NumId / (REAL)MIN(len1,len2));
+   printf("Identity over aligned residues          IDLONG: \
+%.2f%%\n",     (REAL)100.0 * (REAL)NumId / (REAL)NumAligned);
+   printf("Identity over sequence 1               IDFIRST: \
+%.2f%%\n",     (REAL)100.0 * (REAL)NumId / (REAL)len1);
+
+   return(TRUE);
+}
+
+/************************************************************************/
+/*>int FindSeqLenNoGaps(char *seq)
+   -------------------------------
+   Input:    char       *seq       Sequence containing - gap characters
+   Returns:  int                   Length excluding gaps
+
+   28.03.03 Original    By: ACRM
+*/
+int FindSeqLenNoGaps(char *seq)
+{
+   char *chp;
+   int  len = 0;
+
+   for(chp=seq; *chp; chp++)
+   {
+      if(*chp != '-') len++;
+   }
+   
+   return(len);
 }
 
