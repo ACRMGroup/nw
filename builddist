@@ -1,0 +1,87 @@
+#!/bin/sh
+# Short script to copy the required files from bioplib for creation
+# of a distribution version of ProFit
+# 08.11.00  Original   By: ACRM
+
+BIOPSRC=/home/bsm/martin/bioplib/src
+BIOPDATA=/home/bsm/martin/bioplib/data
+BINDIR=/usr/local/bin
+NW=nwV3.12
+SYSTEM=linux
+PROSRC=$NW/src
+#PRODOC=$NW/doc
+PFBIOP=$PROSRC/bioplib
+
+# Create subdirectories
+if [ -d $NW ]
+then
+   echo "Got $NW directory"
+else
+   echo "Creating $NW directory"
+   mkdir $NW
+fi
+
+if [ -d $PROSRC ] 
+then
+   echo "Got source sub-directory"
+else
+   echo "Creating source sub-directory"
+   mkdir $PROSRC
+fi
+
+#if [ -d $PRODOC ] 
+#then
+#   echo "Got doc sub-directory"
+#else
+#   echo "Creating doc sub-directory"
+#   mkdir $PRODOC
+#fi
+
+if [ -d $PFBIOP ] 
+then
+   echo "Got bioplib sub-directory"
+else
+   echo "Creating bioplib sub-directory"
+   mkdir $PFBIOP
+fi
+
+# Copy top-level files
+cp INSTALL                    $NW
+cp ${BIOPDATA}/mdm78.mat $NW
+
+# Copy bioplib files into directory
+cp  ${BIOPSRC}/ReadPIR.c        $PFBIOP
+cp  ${BIOPSRC}/align.c          $PFBIOP
+cp  ${BIOPSRC}/array2.c         $PFBIOP
+cp  ${BIOPSRC}/StoreString.c    $PFBIOP
+cp  ${BIOPSRC}/OpenFile.c       $PFBIOP
+cp  ${BIOPSRC}/GetWord.c        $PFBIOP
+cp  ${BIOPSRC}/FreeStringList.c $PFBIOP
+cp  ${BIOPSRC}/countchar.c      $PFBIOP
+ 
+cp  ${BIOPSRC}/MathType.h       $PFBIOP
+cp  ${BIOPSRC}/SysDefs.h        $PFBIOP
+cp  ${BIOPSRC}/array.h          $PFBIOP
+cp  ${BIOPSRC}/general.h        $PFBIOP
+cp  ${BIOPSRC}/macros.h         $PFBIOP
+cp  ${BIOPSRC}/pdb.h            $PFBIOP
+cp  ${BIOPSRC}/seq.h            $PFBIOP
+
+cp  ${BIOPSRC}/COPYING.DOC      $PFBIOP
+
+# Copy source code into directory
+cp *.c  $PROSRC
+
+# Copy documentation into directory
+#cp *.help         $NW
+
+# Distribution specials
+cp Makefile.dist  ${PROSRC}/Makefile
+
+# Tar up the distribution directory
+tar -cvf ${NW}.tar $NW
+gzip ${NW}.tar
+
+# and finally delete the directory
+/bin/rm -rf $NW
+
