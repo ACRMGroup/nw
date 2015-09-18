@@ -3,11 +3,11 @@
    Program:    nw
    File:       nw.c
    
-   Version:    V3.11
-   Date:       28.09.00
+   Version:    V3.12
+   Date:       09.06.08
    Function:   Do Needleman & Wunsch sequence alignment
    
-   Copyright:  (c) Dr. Andrew C. R. Martin / UCL 1990-2000
+   Copyright:  (c) Dr. Andrew C. R. Martin / UCL 1990-2008
    Author:     Dr. Andrew C. R. Martin
    Address:    Biomolecular Structure & Modelling Unit,
                Department of Biochemistry & Molecular Biology,
@@ -15,9 +15,7 @@
                Gower Street,
                London.
                WC1E 6BT.
-   Phone:      (Home) +44 (0)1372 275775
-               (Work) +44 (0)171 387 7050 X 3284
-   EMail:      martin@bioinf.org.uk
+   EMail:      andrew@bioinf.org.uk
                
 **************************************************************************
 
@@ -84,6 +82,9 @@
                     homologies when using an identity matrix
    V3.11 28.09.00   Modified to allow user specified extension penalty
                     and to call affinealine() rather than aline()
+   V3.12 09.06.08   Improved error messages; checks for zero length seqs
+                    Changed default gap penalties to 10/2 rather than 
+                    5/0
 
 *************************************************************************/
 /* Includes
@@ -100,8 +101,10 @@
 /************************************************************************/
 /* Defines and macros
 */
-#define VERSION  "3.11"
+#define VERSION  "3.12"
 #define MDMFILE  "mdm78.mat"
+#define DEF_GAPPEN 10
+#define DEF_EXTPEN 2
 #define MAXCHAIN 16
 #define MAXBUFF  160
 
@@ -145,6 +148,8 @@ void GetIndelInfo(char *align1, char *align2,
             in verbose mode.
    07.11.95 Completely rewritten.
    02.07.96 Changed quiet to int so when = 2 is completely silent
+   09.06.08 Added "Error: " to error message
+   09.06.08 Changed default gap penalties to something more sensible
 */
 int main(int argc, char **argv)
 {
@@ -165,8 +170,8 @@ int main(int argc, char **argv)
    identity   = FALSE;
    quiet      = 0;
    verbose    = FALSE;
-   GapPenalty = 5;
-   ExtPenalty = 0;
+   GapPenalty = DEF_GAPPEN;
+   ExtPenalty = DEF_EXTPEN;
    AlignStyle = ALIGN_NONE;
    strcpy(mdmfile,MDMFILE);
 
@@ -177,19 +182,20 @@ int main(int argc, char **argv)
       /* Open the input PIR files                                       */
       if((in1=fopen(infile1,"r"))==NULL)
       {
-         fprintf(stderr,"Unable to open input file %s.\n",infile1);
+         fprintf(stderr,"Error: Unable to open input file %s.\n",infile1);
          return(1);
       }
       if((in2=fopen(infile2,"r"))==NULL)
       {
-         fprintf(stderr,"Unable to open input file %s.\n",infile2);
+         fprintf(stderr,"Error: Unable to open input file %s.\n",infile2);
          return(1);
       }
       if(AlignStyle != ALIGN_NONE)
       {
          if((out=fopen(AlignFile,"w"))==NULL)
          {
-            fprintf(stderr,"Unable to open output file %s.\n",AlignFile);
+            fprintf(stderr,"Error: Unable to open output file %s.\n",
+                    AlignFile);
             return(1);
          }
       }
@@ -232,6 +238,7 @@ int main(int argc, char **argv)
    02.07.96 Changed quiet to int so when = 2 is completely silent
             Handles -qq
    28.09.00 Added ExtPenalty
+   09.06.08 Changed handling of defaults for ExtPenalty for -i
 */
 BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty, 
                   int *ExtPenalty, BOOL *verbose, char *mdmfile, 
@@ -239,6 +246,7 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
                   int *AlignStyle, char *AlignFile)
 {
    BOOL UserGapPenalty = FALSE;
+   BOOL UserExtPenalty = FALSE;
    
    argc--;
    argv++;
@@ -258,6 +266,8 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
          case 'i':
             if(!UserGapPenalty)
                *GapPenalty = 1;
+            if(!UserExtPenalty)
+               *ExtPenalty = 0;
             *identity = TRUE;
             break;
          case 'g':
@@ -272,6 +282,7 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
          case 'x':
             argc--;
             argv++;
+            UserExtPenalty = TRUE;
             if(argc < 0)
                return(FALSE);
             if((sscanf(argv[0], "%d", ExtPenalty)) == 0)
@@ -334,17 +345,18 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
 */
 void Usage(void)
 {
-   fprintf(stderr,"\nNW %s (c) 1990-2000 Dr. Andrew C.R. Martin, \
+   fprintf(stderr,"\nNW %s (c) 1990-2008 Dr. Andrew C.R. Martin, \
 NIMR/SciTech Software/UCL/Reading\n", VERSION);
 
    fprintf(stderr,"\nUsage: nw [-g <n>][-x <n>[-i][-m <matrix>][-v]\
 [-q[q]][-p <file>] <file1> <file2>\n");
    fprintf(stderr,"       -g <n>      Specify the gap penalty\n");
-   fprintf(stderr,"                   [Default: 5 for matrix or 1 for \
-identity matrix]\n");
+   fprintf(stderr,"                   [Default: %d for matrix or 1 for \
+identity matrix]\n", DEF_GAPPEN);
    fprintf(stderr,"       -x <n>      Specify the gap extension \
 penalty\n");
-   fprintf(stderr,"                   [Default: 0]\n");
+   fprintf(stderr,"                   [Default: %d for matrix or 0 for \
+identity matrix]\n",DEF_EXTPEN);
    fprintf(stderr,"       -i          Use an identity matrix\n");
    fprintf(stderr,"       -m <matrix> Specify the mutation matrix \
 [Default: %s]\n",MDMFILE);
@@ -363,6 +375,8 @@ alignment program taking\n");
    fprintf(stderr,"PIR format input files. Only the first sequence in \
 each file is aligned,\n");
    fprintf(stderr,"but multiple chains will be handled.\n\n");
+   fprintf(stderr,"Note that the default gap penalties have changed in \
+V3.12\n\n");
 }
 
 
@@ -392,6 +406,7 @@ each file is aligned,\n");
    28.09.00 Changed to call affinealign(), ExtPenalty passed in as
             a parameter. Moved call to GetIndelInfo() so it works
             properly with -q. Changed 'homology' to 'similarity'
+   09.06.08 Added "Error: " to error message
 */
 BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty, 
                  int ExtPenalty, char *mdmfile, BOOL verbose, int quiet,
@@ -439,14 +454,16 @@ BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty,
    nchain1 = ReadPIR(in1,FALSE,seq1,MAXCHAIN,&SeqInfo1,&punct,&error);
    if(error)
    {
-      fprintf(stderr,"Unable to read PIR sequence file. No memory\n");
+      fprintf(stderr,"Error: Unable to read PIR sequence file. \
+No memory\n");
       return(FALSE);
    }
    
    nchain2 = ReadPIR(in2,FALSE,seq2,MAXCHAIN,&SeqInfo2,&punct,&error);
    if(error)
    {
-      fprintf(stderr,"Unable to read PIR sequence file. No memory\n");
+      fprintf(stderr,"Error: Unable to read PIR sequence file. \
+No memory\n");
       return(FALSE);
    }
 
@@ -476,7 +493,7 @@ BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty,
    align2 = (char *)malloc((maxlen1+maxlen2) * sizeof(char));
    if(align1==NULL || align2==NULL)
    {
-      fprintf(stderr,"No memory for alignment storage\n");
+      fprintf(stderr,"Error: No memory for alignment storage\n");
       return(FALSE);
    }
 
@@ -554,7 +571,8 @@ aligned\n\n", MIN(nchain1, nchain2));
    {
       if(!ReadMDM(mdmfile))
       {
-         fprintf(stderr,"Unable to read mutation matrix: %s\n",mdmfile);
+         fprintf(stderr,"Error: Unable to read mutation matrix: %s\n",
+                 mdmfile);
          for(chain=0; chain<nchain1; chain++)
             free(seq1[chain]);
          for(chain=0; chain<nchain2; chain++)
@@ -568,13 +586,20 @@ aligned\n\n", MIN(nchain1, nchain2));
    {
       len1 = strlen(seq1[chain]);
       len2 = strlen(seq2[chain]);
+
+      if((len1==0) || (len2==0))
+      {
+         fprintf(stderr,"Error: %s sequence is of zero length\n",
+                 ((len1==0)?"First":"Second"));
+         return(FALSE);
+      }
       
       score = affinealign(seq1[chain], len1, seq2[chain], len2, 
                           verbose, identity, GapPenalty, ExtPenalty,
                           align1, align2, &align_len);
       if(!score)
       {
-         fprintf(stderr,"No memory for alignment matrix\n");
+         fprintf(stderr,"Error: No memory for alignment matrix\n");
          return(FALSE);
       }
       /* Calculate various scores                                       */
@@ -745,6 +770,7 @@ IDNOTAILTOT: %.2f%%\n",
    Writes the alignment in PIR sequence alignment format.
 
    07.11.95 Original    By: ACRM
+   09.06.08 Added "Error: " to error message
 */
 void WritePIRAlignment(FILE *out, SEQINFO SeqInfo1, SEQINFO SeqInfo2,
                        STRINGLIST *Alignments1, STRINGLIST *Alignments2)
@@ -756,7 +782,7 @@ void WritePIRAlignment(FILE *out, SEQINFO SeqInfo1, SEQINFO SeqInfo2,
 
    if(Alignments1 == NULL || Alignments2 == NULL)
    {
-      fprintf(stderr,"No alignments stored. Unable to write PIR \
+      fprintf(stderr,"Error: No alignments stored. Unable to write PIR \
 alignment file.\n");
       return;
    }
