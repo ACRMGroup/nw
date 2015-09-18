@@ -3,11 +3,11 @@
    Program:    nw
    File:       nw.c
    
-   Version:    V3.8
-   Date:       01.11.96
+   Version:    V3.10
+   Date:       21.01.98
    Function:   Do Needleman & Wunsch sequence alignment
    
-   Copyright:  (c) Dr. Andrew C. R. Martin 1990-6
+   Copyright:  (c) Dr. Andrew C. R. Martin / UCL 1990-8
    Author:     Dr. Andrew C. R. Martin
    Address:    Biomolecular Structure & Modelling Unit,
                Department of Biochemistry & Molecular Biology,
@@ -17,7 +17,7 @@
                WC1E 6BT.
    Phone:      (Home) +44 (0)1372 275775
                (Work) +44 (0)171 387 7050 X 3284
-   EMail:      INTERNET: martin@biochem.ucl.ac.uk
+   EMail:      martin@biochem.ucl.ac.uk
                
 **************************************************************************
 
@@ -78,6 +78,10 @@
    V3.7  11.07.96   Added percentage homologies
    V3.8  01.11.96   Made the output easier to parse. Added % id against
                     first sequence length
+   V3.9  04.03.97   Prints number of INDEL residues
+   V3.10 21.01.98   -i flag was causing error messages in calculation of
+                    max possible score for alignment. No longer prints
+                    homologies when using an identity matrix
 
 *************************************************************************/
 /* Includes
@@ -94,7 +98,7 @@
 /************************************************************************/
 /* Defines and macros
 */
-#define VERSION  "3.8"
+#define VERSION  "3.10"
 #define MDMFILE  "mdm78.mat"
 #define MAXCHAIN 16
 #define MAXBUFF  160
@@ -123,7 +127,9 @@ void WritePIRAlignment(FILE *out, SEQINFO SeqInfo1, SEQINFO SeqInfo2,
 int CalcNumId(char *seq1, char *seq2, int length);
 int CalcNumAligned(char *align1, char *align2, int align_len);
 int FindAlnLenNoTail(char *align1, char *align2, int align_len);
-int CalcIDScore(char *seq1, char *seq2);
+int CalcIDScore(char *seq1, char *seq2, BOOL identity);
+void GetIndelInfo(char *align1, char *align2, 
+                  int *ndel, int *ndelg, int *nins, int *ninsg);
 
 
 /************************************************************************/
@@ -312,7 +318,7 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
 */
 void Usage(void)
 {
-   fprintf(stderr,"\nNW %s (c) 1990-1995 Dr. Andrew C.R. Martin, \
+   fprintf(stderr,"\nNW %s (c) 1990-1997 Dr. Andrew C.R. Martin, \
 NIMR/SciTech Software/UCL\n", VERSION);
 
    fprintf(stderr,"\nUsage: nw [-g <n>][-i][-m <matrix>][-v][-q[q]]\
@@ -397,7 +403,13 @@ BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty,
               TotalSeq1Length = 0,
               TotalAlnLenNoTail = 0,
               IDScore = 0,
-              TotalIDScore = 0;
+              TotalIDScore = 0,
+              nins, ninsg,
+              ndel, ndelg,
+              TotalNIns  = 0,
+              TotalNInsG = 0,
+              TotalNDel  = 0,
+              TotalNDelG = 0;
    STRINGLIST *Alignments1 = NULL,
               *Alignments2 = NULL;
    
@@ -455,7 +467,7 @@ BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty,
       printf("====================================================\
 ==\n");
       printf("Copyright Andrew C.R. Martin, NIMR/SciTech Software/UCL \
-1990-1995\n");
+1990-1998\n");
       
       printf("\nParameters for this run\n");
       printf("-----------------------\n");
@@ -542,10 +554,10 @@ aligned\n\n", MIN(nchain1, nchain2));
          fprintf(stderr,"No memory for alignment matrix\n");
          return(FALSE);
       }
-
       /* Calculate various scores                                       */
       TotalScore        += score;
-      IDScore            = CalcIDScore(seq1[chain], seq2[chain]);
+      IDScore            = CalcIDScore(seq1[chain], seq2[chain],
+                                       identity);
       TotalIDScore      += IDScore;
       TotalLength       += align_len;
       TotalMinLength    += MIN(len1, len2);
@@ -596,6 +608,12 @@ aligned\n\n", MIN(nchain1, nchain2));
          printf("\n");
          for(j=0+offset; j<align_len; j++) printf("%c",align2[j]);
          printf("\n\n");
+
+         GetIndelInfo(align1, align2, &ndel, &ndelg, &nins, &ninsg);
+         TotalNDel  += ndel;
+         TotalNDelG += ndelg;
+         TotalNIns  += nins;
+         TotalNInsG += ninsg;
       }  /* if(!quiet)                                                  */
 
       if(quiet < 2)
@@ -603,11 +621,15 @@ aligned\n\n", MIN(nchain1, nchain2));
          if(quiet)
             printf("CHAIN %d\n",chain+1);
             
+         /* align() in identity mode scores 2 for a match, so we divide 
+            the score by 2
+         */
          printf("Score                                    SCORE: \
-%d\n",score);
+%d\n",score/(identity?2:1));
          printf("Score (normalised by alignment length)  NSCORE: \
-%.2f\n",       (REAL)score/(REAL)align_len);
-         printf("Percentage homology                      HOMOL: \
+%.2f\n",       (REAL)score/((REAL)align_len * ((identity?2.0:1.0))));
+         if(!identity)
+            printf("Percentage homology                      HOMOL: \
 %.2f%%\n",     (REAL)100.0 * (REAL)score/(REAL)IDScore);
          printf("Identity over alignment length         IDALLEN: \
 %.2f%%\n",     (REAL)100.0 * (REAL)NumId / (REAL)align_len);
@@ -617,8 +639,12 @@ aligned\n\n", MIN(nchain1, nchain2));
 %.2f%%\n",     (REAL)100.0 * (REAL)NumId / (REAL)MIN(len1,len2));
          printf("Identity over aligned residues          IDLONG: \
 %.2f%%\n",     (REAL)100.0 * (REAL)NumId / (REAL)NumAligned);
-         printf("Identity over first sequence           IDFIRST: \
-%.2f%%\n\n\n", (REAL)100.0 * (REAL)NumId / (REAL)len1);
+         printf("Identity over sequence 1               IDFIRST: \
+%.2f%%\n",     (REAL)100.0 * (REAL)NumId / (REAL)len1);
+         printf("Deletions in sequence 1: residues(sites) NDELS: \
+%d (%d)\n", ndel, ndelg);
+         printf("Insertions in sequence 1: residues(sites) NINS: \
+%d (%d)\n", nins, ninsg);
       }
    }  /* For each chain                                                 */
 
@@ -628,11 +654,13 @@ aligned\n\n", MIN(nchain1, nchain2));
       if(nchain1 > 1 || nchain2 > 1)
       {
          printf("Total score                                  \
-   SCORETOT: %d\n",         TotalScore);
+   SCORETOT: %d\n",         TotalScore/(identity?2:1));
          printf("Total score (normalised by alignment length) \
   NSCORETOT: %.2f\n",
-                (REAL)TotalScore/(REAL)TotalLength);
-         printf("Total percentage homology                    \
+                (REAL)TotalScore/
+                ((REAL)TotalLength * ((identity?2.0:1.0))));
+         if(!identity)
+            printf("Total percentage homology                    \
    HOMOLTOT: %.2f%%\n",
                 (REAL)100.0 * (REAL)TotalScore/(REAL)TotalIDScore);
          printf("Total Identity over alignment length         \
@@ -650,6 +678,10 @@ IDNOTAILTOT: %.2f%%\n",
          printf("Total Identity over first sequence           \
  IDFIRSTTOT: %.2f%%\n\n\n",
                 (REAL)100.0 * (REAL)TotalNumId / (REAL)TotalSeq1Length);
+         printf("Total deletions in sequence 1: residues(sites)\
+     NDELS: %d (%d)\n", TotalNDel, TotalNDelG);
+         printf("Total insertions in sequence 1: residues(sites)\
+     NINS: %d (%d)\n", TotalNIns, TotalNInsG);
       }
    }
 
@@ -833,14 +865,15 @@ int FindAlnLenNoTail(char *align1, char *align2, int align_len)
 
 
 /************************************************************************/
-/*>int CalcIDScore(char *seq1, char *seq2)
-   ---------------------------------------
+/*>int CalcIDScore(char *seq1, char *seq2, BOOL identity)
+   ------------------------------------------------------
    Calculates the maximum possible score resulting from the identical
    sequence
 
    11.07.96 Original   By: ACRM
+   21.01.98 Added identity flag
 */
-int CalcIDScore(char *seq1, char *seq2)
+int CalcIDScore(char *seq1, char *seq2, BOOL identity)
 {
    int score1 = 0,
        score2 = 0,
@@ -848,16 +881,67 @@ int CalcIDScore(char *seq1, char *seq2)
        seqlen1 = strlen(seq1),
        seqlen2 = strlen(seq2);
 
-   for(i=0; i<seqlen1; i++)
+   if(identity)
    {
-      if(isalpha(seq1[i]))
-         score1 += CalcMDMScore(seq1[i], seq1[i]);
+      score1 = seqlen1;
+      score2 = seqlen2;
    }
-   for(i=0; i<seqlen2; i++)
+   else
    {
-      if(isalpha(seq2[i]))
-         score2 += CalcMDMScore(seq2[i], seq2[i]);
+      for(i=0; i<seqlen1; i++)
+      {
+         if(isalpha(seq1[i]))
+            score1 += CalcMDMScore(seq1[i], seq1[i]);
+      }
+      for(i=0; i<seqlen2; i++)
+      {
+         if(isalpha(seq2[i]))
+            score2 += CalcMDMScore(seq2[i], seq2[i]);
+      }
    }
    
    return(MIN(score1, score2));
 }
+
+
+/************************************************************************/
+/*>void GetIndelInfo(char *align1, char *align2, 
+                     int *ndel, int *ndelg, int *nins, int *ninsg)
+   ---------------------------------------------------------------
+   Input:     char      *align1      Sequence for counting inserts
+              char      *align2      Sequence for counting deletes
+   Output:    int       *ndel        Number of deletes in align1
+                        *ndelg       Number of delete groups in align1
+                        *nins        Number of deletes in align2
+                                     (inserts in align1)
+                        *ninsg       Number of delete groups in align2
+                                     (insert groups in align1)
+
+   04.03.97 Original   By: ACRM
+   06.03.97 Initialised ndelg and ninsg (Oops!)
+*/
+void GetIndelInfo(char *align1, char *align2, 
+                  int *ndel, int *ndelg, int *nins, int *ninsg)
+{
+   int i;
+   char prev;
+   
+   *ndel = countchar(align1,'-');
+   *nins = countchar(align2,'-');
+   *ndelg = 0;
+   *ninsg = 0;
+
+   for(i=0, prev = '*'; align1[i]; i++)
+   {
+      if(align1[i]=='-' && prev != '-')
+         (*ndelg)++;
+      prev = align1[i];
+   }
+   for(i=0, prev = '*'; align2[i]; i++)
+   {
+      if(align2[i]=='-' && prev != '-')
+         (*ninsg)++;
+      prev = align2[i];
+   }
+}
+
