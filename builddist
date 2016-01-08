@@ -6,7 +6,7 @@
 BIOPSRC=/home/bsm/martin/bioplib/src
 BIOPDATA=/home/bsm/martin/bioplib/data
 BINDIR=/usr/local/bin
-NW=nwV3.12
+NW=nwV3.15
 SYSTEM=linux
 PROSRC=$NW/src
 #PRODOC=$NW/doc
