@@ -3,11 +3,11 @@
    Program:    nw
    File:       nw.c
    
-   Version:    V3.15
-   Date:       18.09.15
+   Version:    V3.16
+   Date:       11.07.16
    Function:   Do Needleman & Wunsch sequence alignment
    
-   Copyright:  (c) Dr. Andrew C. R. Martin / UCL 1990-2015
+   Copyright:  (c) Dr. Andrew C. R. Martin / UCL 1990-2016
    Author:     Dr. Andrew C. R. Martin
    Address:    Biomolecular Structure & Modelling Unit,
                Department of Biochemistry & Molecular Biology,
@@ -89,6 +89,7 @@
    V3.14 11.03.15   Added -d - display matches in alignment
                     Initialized some variables
    V3.15 18.09.15   Corrected to take just one argument with -s
+   V3.16 11.07.16   Now uses new bioplib calls
 
 *************************************************************************/
 /* Includes
@@ -98,6 +99,8 @@
 #include <string.h>
 #include <ctype.h>
 
+#define NODEPRECATION 1
+
 #include "bioplib/macros.h"
 #include "bioplib/seq.h"
 #include "bioplib/general.h"
@@ -105,7 +108,8 @@
 /************************************************************************/
 /* Defines and macros
 */
-#define VERSION  "3.15"
+#define VERSION  "3.16"
+#define YEAR     "2016"
 #define MDMFILE  "mdm78.mat"
 #define DEF_GAPPEN 10
 #define DEF_EXTPEN 2
@@ -398,8 +402,8 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
 */
 void Usage(void)
 {
-   fprintf(stderr,"\nNW %s (c) 1990-2010 Dr. Andrew C.R. Martin, \
-NIMR/SciTech Software/UCL/Reading\n", VERSION);
+   fprintf(stderr,"\nNW %s (c) 1990-%s Dr. Andrew C.R. Martin, \
+NIMR/SciTech Software/UCL/Reading\n", VERSION, YEAR);
 
    fprintf(stderr,"\nUsage: nw [-g n][-x n][-i][-m <matrix>][-v]\
 [-q[q]][-p <file>][-d] <file1> <file2>\n");
@@ -568,7 +572,7 @@ No memory\n");
       printf("====================================================\
 ==\n");
       printf("Copyright Andrew C.R. Martin, NIMR/SciTech Software/UCL \
-1990-1998\n");
+1990-%s\n", YEAR);
       
       printf("\nParameters for this run\n");
       printf("-----------------------\n");
@@ -684,8 +688,8 @@ aligned\n\n", MIN(nchain1, nchain2));
       /* Store the sequences for later                                  */
       if(AlignStyle != ALIGN_NONE)
       {
-         Alignments1 = StoreString(Alignments1, align1);
-         Alignments2 = StoreString(Alignments2, align2);
+         Alignments1 = blStoreString(Alignments1, align1);
+         Alignments2 = blStoreString(Alignments2, align2);
       }
 
       /* Display the alignment                                          */
@@ -837,8 +841,8 @@ IDNOTAILTOT: %.2f%%\n",
    /* Free up memory used to store alignment strings                    */
    if(AlignStyle)
    {
-      FreeStringList(Alignments1);
-      FreeStringList(Alignments2);
+      blFreeStringList(Alignments1);
+      blFreeStringList(Alignments2);
    }
     
    /* Free allocated memory                                             */
@@ -1105,8 +1109,8 @@ BOOL ReadAlignmentAndScore(FILE *in)
               AlnLenNoTail, len1, len2;
    BOOL       punct, error;
 
-   nchain1 = ReadPIR(in,TRUE,align1,MAXCHAIN,&SeqInfo,&punct,&error);
-   nchain2 = ReadPIR(in,TRUE,align2,MAXCHAIN,&SeqInfo,&punct,&error);
+   nchain1 = blReadPIR(in,TRUE,align1,MAXCHAIN,&SeqInfo,&punct,&error);
+   nchain2 = blReadPIR(in,TRUE,align2,MAXCHAIN,&SeqInfo,&punct,&error);
    align_len = strlen(align1[0]);
 
    if((nchain1!=1) || (nchain2!=1) || (align_len!=strlen(align2[0])))
