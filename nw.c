@@ -131,11 +131,11 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
                   int *ExtPenalty, BOOL *verbose, char *mdmfile, 
                   char *infile1, char *infile2, int *quiet,
                   int *AlignStyle, char *AlignFile, BOOL *ScoreOnly,
-                  BOOL *showMatches);
+                  BOOL *showMatches, BOOL *doRaw);
 void Usage(void);
 BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty, 
                  int ExtPenalty, char *mdmfile, BOOL verbose, int quiet,
-                 int AlignStyle, FILE *out, BOOL showMatches);
+                 int AlignStyle, FILE *out, BOOL showMatches, BOOL doRaw);
 void WritePIRAlignment(FILE *out, SEQINFO SeqInfo1, SEQINFO SeqInfo2,
                        STRINGLIST *Alignments1, STRINGLIST *Alignments2);
 int CalcNumId(char *seq1, char *seq2, int length);
@@ -144,7 +144,7 @@ int FindAlnLenNoTail(char *align1, char *align2, int align_len);
 int CalcIDScore(char *seq1, char *seq2, BOOL identity);
 void GetIndelInfo(char *align1, char *align2, 
                   int *ndel, int *ndelg, int *nins, int *ninsg);
-BOOL ReadAlignmentAndScore(FILE *in);
+BOOL ReadAlignmentAndScore(FILE *in, BOOL doRaw);
 int FindSeqLenNoGaps(char *seq);
 
 
@@ -163,13 +163,15 @@ int FindSeqLenNoGaps(char *seq);
    09.06.08 Changed default gap penalties to something more sensible
    23.08.10 Added ScoreOnly
    11.03.15 Added showMatches and initialized out
+   11.07.16 Added raw PIR handling
 */
 int main(int argc, char **argv)
 {
    BOOL identity,
         verbose,
-        ScoreOnly = FALSE,
-        showMatches = FALSE;
+        ScoreOnly   = FALSE,
+        showMatches = FALSE,
+        doRaw       = FALSE;
    int  GapPenalty,
         ExtPenalty,
         AlignStyle,
@@ -193,7 +195,8 @@ int main(int argc, char **argv)
 
    if(ParseCmdLine(argc, argv, &identity, &GapPenalty, &ExtPenalty,
                    &verbose, mdmfile, infile1, infile2, &quiet, 
-                   &AlignStyle, AlignFile, &ScoreOnly, &showMatches))
+                   &AlignStyle, AlignFile, &ScoreOnly, &showMatches,
+                   &doRaw))
    {
       if(ScoreOnly)
       {
@@ -202,7 +205,7 @@ int main(int argc, char **argv)
             fprintf(stderr,"Unable to open input file %s.\n",infile1);
             return(1);
          }
-         ReadAlignmentAndScore(in1);
+         ReadAlignmentAndScore(in1, doRaw);
       }
       else
       {
@@ -230,7 +233,7 @@ int main(int argc, char **argv)
          }
          
          DoAlignment(in1, in2, identity, GapPenalty, ExtPenalty, mdmfile, 
-                     verbose, quiet, AlignStyle, out, showMatches);
+                     verbose, quiet, AlignStyle, out, showMatches, doRaw);
       }
    }
    else
@@ -247,8 +250,8 @@ int main(int argc, char **argv)
                      int *GapPenalty, int *ExtPenalty, BOOL *verbose, 
                      char *mdmfile, char *infile1, char *infile2, 
                      int *quiet, int *AlignStyle, char *AlignFile,
-                     BOOL *ScoreOnly, BOOL *showMatches)
-   ----------------------------------------------------------------
+                     BOOL *ScoreOnly, BOOL *showMatches, BOOL *doRaw)
+   ------------------------------------------------------------------
    Input:   int    argc         Argument count
             char   **argv       Argument array
    Output:  BOOL   *identity    Use an identity matrix
@@ -263,6 +266,7 @@ int main(int argc, char **argv)
             char   *AlignFile   Filename for output alignment file
             BOOL   *ScoreOnly   Score an existing alignment
             BOOL   *showMatches Show matches in alignment
+            BOOL   *doRaw       Read raw PIR files
    Returns: BOOL                Success?
 
    Parse the command line
@@ -275,15 +279,17 @@ int main(int argc, char **argv)
    23.08.10 Added ScoreOnly
    11.03.15 Added showMatches
    18.09.15 Only needs one argument for -s ScoreOnly
+   11.07.16 Added -r and doRaw
 */
 BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty, 
                   int *ExtPenalty, BOOL *verbose, char *mdmfile, 
                   char *infile1, char *infile2, int *quiet,
                   int *AlignStyle, char *AlignFile, BOOL *ScoreOnly,
-                  BOOL *showMatches)
+                  BOOL *showMatches, BOOL *doRaw)
 {
    BOOL UserGapPenalty = FALSE;
    BOOL UserExtPenalty = FALSE;
+   *doRaw              = FALSE;
    
    argc--;
    argv++;
@@ -351,6 +357,9 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
          case 'd':
             *showMatches = TRUE;
             break;
+         case 'r':
+            *doRaw = TRUE;
+            break;
          default:
             return(FALSE);
             break;
@@ -398,7 +407,8 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
    02.07.96 Added -qq (silent mode)
    28.09.00 Added -x
    23.08.10 Added -s
-   11.03.15 Added -
+   11.03.15 Added -d
+   11.07.16 Added -r
 */
 void Usage(void)
 {
@@ -406,7 +416,7 @@ void Usage(void)
 NIMR/SciTech Software/UCL/Reading\n", VERSION, YEAR);
 
    fprintf(stderr,"\nUsage: nw [-g n][-x n][-i][-m <matrix>][-v]\
-[-q[q]][-p <file>][-d] <file1> <file2>\n");
+[-q[q]][-p <file>][-d][-r] <file1> <file2>\n");
    fprintf(stderr," -or-  nw -s <aligned-file>\n");
    fprintf(stderr,"       -g <n>      Specify the gap penalty\n");
    fprintf(stderr,"                   [Default: %d for matrix or 1 for \
@@ -430,6 +440,10 @@ file\n");
    fprintf(stderr,"       <file2>     Second PIR sequence file\n");
    fprintf(stderr,"       -s          Score an existing alignment \
 (in PIR format)\n");
+   fprintf(stderr,"       -r          Read a PIR format as a raw file \
+- no special\n");
+   fprintf(stderr,"                   handling of non-alpha \
+characters\n");
    
    fprintf(stderr,"\nNW is a simple Needleman and Wunsch sequence \
 alignment program taking\n");
@@ -445,7 +459,7 @@ V3.12\n\n");
 /*>BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty, 
                     int ExtPenalty, char *mdmfile, BOOL verbose, 
                     int quiet, int AlignStyle, FILE *out, 
-                    BOOL showMatches)
+                    BOOL showMatches, BOOL doRaw)
    ---------------------------------------------------------------------
    Main routine which does the alignment work. Reads the sequence files
    and calls the alignment code for each pair of chains in turn.
@@ -473,10 +487,11 @@ V3.12\n\n");
             Added showMatches code
             Initialized TotalNumId
    18.09.15 Removed unused variable
+   11.07.16 Added raw PIR handling
 */
 BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty, 
                  int ExtPenalty, char *mdmfile, BOOL verbose, int quiet,
-                 int AlignStyle, FILE *out, BOOL showMatches)
+                 int AlignStyle, FILE *out, BOOL showMatches, BOOL doRaw)
 {
    char       *seq1[MAXCHAIN],              /* Sequences to align       */
               *seq2[MAXCHAIN],
@@ -517,7 +532,15 @@ BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty,
               *Alignments2 = NULL;
    
    /* Read sequences                                                    */
-   nchain1 = blReadPIR(in1,FALSE,seq1,MAXCHAIN,&SeqInfo1,&punct,&error);
+   if(doRaw)
+   {
+      nchain1 = blReadRawPIR(in1,seq1,MAXCHAIN,TRUE,&SeqInfo1,&error);
+   }
+   else
+   {
+      nchain1 = blReadPIR(in1,FALSE,seq1,MAXCHAIN,&SeqInfo1,&punct,&error);
+   }
+   
    if(error)
    {
       fprintf(stderr,"Error: Unable to read PIR sequence file. \
@@ -525,7 +548,15 @@ No memory\n");
       return(FALSE);
    }
    
-   nchain2 = blReadPIR(in2,FALSE,seq2,MAXCHAIN,&SeqInfo2,&punct,&error);
+   if(doRaw)
+   {
+      nchain2 = blReadRawPIR(in2,seq2,MAXCHAIN,TRUE,&SeqInfo2,&error);
+   }
+   else
+   {
+      nchain2 = blReadPIR(in2,FALSE,seq2,MAXCHAIN,&SeqInfo2,&punct,&error);
+   }
+   
    if(error)
    {
       fprintf(stderr,"Error: Unable to read PIR sequence file. \
@@ -1093,15 +1124,17 @@ void GetIndelInfo(char *align1, char *align2,
 }
 
 /************************************************************************/
-/*>BOOL ReadAlignmentAndScore(FILE *in)
-   ------------------------------------
+/*>BOOL ReadAlignmentAndScore(FILE *in, BOOL doRaw)
+   -------------------------------------------------
    Input:    FILE        *in       PIR file pointer - file contains two
                                    aligned sequences with headers
+             BOOL        doRaw     Read raw sequence file
    Returns:  BOOL                  Success?
 
    28.03.03 Original    By: ACRM
+   11.07.16 Added raw PIR handling
 */
-BOOL ReadAlignmentAndScore(FILE *in)
+BOOL ReadAlignmentAndScore(FILE *in, BOOL doRaw)
 {
    char       *align1[MAXCHAIN],*align2[MAXCHAIN];
    SEQINFO    SeqInfo;
@@ -1109,8 +1142,17 @@ BOOL ReadAlignmentAndScore(FILE *in)
               AlnLenNoTail, len1, len2;
    BOOL       punct, error;
 
-   nchain1 = blReadPIR(in,TRUE,align1,MAXCHAIN,&SeqInfo,&punct,&error);
-   nchain2 = blReadPIR(in,TRUE,align2,MAXCHAIN,&SeqInfo,&punct,&error);
+   if(doRaw)
+   {
+      nchain1 = blReadRawPIR(in,align1,MAXCHAIN,TRUE,&SeqInfo,&error);
+      nchain2 = blReadRawPIR(in,align2,MAXCHAIN,TRUE,&SeqInfo,&error);
+   }
+   else
+   {
+      nchain1 = blReadPIR(in,TRUE,align1,MAXCHAIN,&SeqInfo,&punct,&error);
+      nchain2 = blReadPIR(in,TRUE,align2,MAXCHAIN,&SeqInfo,&punct,&error);
+   }
+   
    align_len = strlen(align1[0]);
 
    if((nchain1!=1) || (nchain2!=1) || (align_len!=strlen(align2[0])))
