@@ -449,9 +449,23 @@ characters\n");
 alignment program taking\n");
    fprintf(stderr,"PIR format input files. Only the first sequence in \
 each file is aligned,\n");
-   fprintf(stderr,"but multiple chains will be handled.\n\n");
-   fprintf(stderr,"Note that the default gap penalties have changed in \
-V3.12\n\n");
+   fprintf(stderr,"but multiple chains will be handled.\n");
+
+   fprintf(stderr,"\nThe PIR format allows punctuation characters to \
+indicate incomplete\n");
+   fprintf(stderr,"sequences, (juxtaposted) regions, residue certainty, \
+joins inferred\n");
+   fprintf(stderr,"from homology, etc. If special characters are instead \
+being used to\n");
+   fprintf(stderr,"represent a consensus sequence, then (assuming these \
+characters are \n");
+   fprintf(stderr,"specified in the scoring matrix being used) the \
+special handling of\n");
+   fprintf(stderr,"punctuation characters can be switched off using the \
+-r option.\n");
+
+   fprintf(stderr,"\nNote that the default gap penalties have changed \
+in V3.12\n\n");
 }
 
 
