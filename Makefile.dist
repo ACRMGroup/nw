@@ -1,6 +1,6 @@
 OBJS = nw.o bioplib/ReadPIR.o bioplib/align.o bioplib/array2.o \
        bioplib/StoreString.o bioplib/OpenFile.o bioplib/GetWord.o \
-       bioplib/FreeStringList.o bioplib/countchar.o
+       bioplib/FreeStringList.o bioplib/countchar.o bioplib/ReadRawPIR.o
 
 nw : $(OBJS)
 	$(CC) $(LOPT) -o nw $(OBJS)
