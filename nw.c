@@ -3,11 +3,11 @@
    Program:    nw
    File:       nw.c
    
-   Version:    V3.16
-   Date:       11.07.16
+   Version:    V3.17
+   Date:       05.09.25
    Function:   Do Needleman & Wunsch sequence alignment
    
-   Copyright:  (c) Dr. Andrew C. R. Martin / UCL 1990-2016
+   Copyright:  (c) Dr. Andrew C. R. Martin / UCL 1990-2025
    Author:     Dr. Andrew C. R. Martin
    Address:    Biomolecular Structure & Modelling Unit,
                Department of Biochemistry & Molecular Biology,
@@ -90,6 +90,7 @@
                     Initialized some variables
    V3.15 18.09.15   Corrected to take just one argument with -s
    V3.16 11.07.16   Now uses new bioplib calls
+   V3.17 05.09.25   Added -f for FASTA files
 
 *************************************************************************/
 /* Includes
@@ -103,21 +104,37 @@
 
 #include "bioplib/macros.h"
 #include "bioplib/seq.h"
+#include "bioplib/sequtil.h"
 #include "bioplib/general.h"
 
 /************************************************************************/
 /* Defines and macros
 */
-#define VERSION  "3.16"
-#define YEAR     "2016"
+#define VERSION  "3.17"
+#define YEAR     "2025"
 #define MDMFILE  "mdm78.mat"
 #define DEF_GAPPEN 10
 #define DEF_EXTPEN 2
 #define MAXCHAIN 16
 #define MAXBUFF  160
+#define MAXSEQBUFF 2048
 
 #define ALIGN_NONE 0
 #define ALIGN_PIR  1
+
+#define INITSEQINFO(x) { \
+      (x).fragment   = FALSE; \
+      (x).paren      = FALSE; \
+      (x).DotInParen = FALSE; \
+      (x).NonExpJoin = FALSE; \
+      (x).UnknownPos = FALSE; \
+      (x).Incomplete = FALSE; \
+      (x).Truncated  = FALSE; \
+      (x).Juxtapose  = FALSE; \
+      (x).code[0]    = '\0'; \
+      (x).name[0]    = '\0'; \
+      (x).source[0]  = '\0'; \
+      }
 
 /************************************************************************/
 /* Globals
@@ -131,11 +148,12 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
                   int *ExtPenalty, BOOL *verbose, char *mdmfile, 
                   char *infile1, char *infile2, int *quiet,
                   int *AlignStyle, char *AlignFile, BOOL *ScoreOnly,
-                  BOOL *showMatches, BOOL *doRaw);
+                  BOOL *showMatches, BOOL *doRaw, BOOL *doFasta);
 void Usage(void);
 BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty, 
                  int ExtPenalty, char *mdmfile, BOOL verbose, int quiet,
-                 int AlignStyle, FILE *out, BOOL showMatches, BOOL doRaw);
+                 int AlignStyle, FILE *out, BOOL showMatches, BOOL doRaw,
+                 BOOL doFasta);
 void WritePIRAlignment(FILE *out, SEQINFO SeqInfo1, SEQINFO SeqInfo2,
                        STRINGLIST *Alignments1, STRINGLIST *Alignments2);
 int CalcNumId(char *seq1, char *seq2, int length);
@@ -171,7 +189,8 @@ int main(int argc, char **argv)
         verbose,
         ScoreOnly   = FALSE,
         showMatches = FALSE,
-        doRaw       = FALSE;
+        doRaw       = FALSE,
+        doFasta     = FALSE;
    int  GapPenalty,
         ExtPenalty,
         AlignStyle,
@@ -196,7 +215,7 @@ int main(int argc, char **argv)
    if(ParseCmdLine(argc, argv, &identity, &GapPenalty, &ExtPenalty,
                    &verbose, mdmfile, infile1, infile2, &quiet, 
                    &AlignStyle, AlignFile, &ScoreOnly, &showMatches,
-                   &doRaw))
+                   &doRaw, &doFasta))
    {
       if(ScoreOnly)
       {
@@ -233,7 +252,8 @@ int main(int argc, char **argv)
          }
          
          DoAlignment(in1, in2, identity, GapPenalty, ExtPenalty, mdmfile, 
-                     verbose, quiet, AlignStyle, out, showMatches, doRaw);
+                     verbose, quiet, AlignStyle, out, showMatches, doRaw,
+                     doFasta);
       }
    }
    else
@@ -250,7 +270,8 @@ int main(int argc, char **argv)
                      int *GapPenalty, int *ExtPenalty, BOOL *verbose, 
                      char *mdmfile, char *infile1, char *infile2, 
                      int *quiet, int *AlignStyle, char *AlignFile,
-                     BOOL *ScoreOnly, BOOL *showMatches, BOOL *doRaw)
+                     BOOL *ScoreOnly, BOOL *showMatches, BOOL *doRaw.
+                     BOOL *doFasta)
    ------------------------------------------------------------------
    Input:   int    argc         Argument count
             char   **argv       Argument array
@@ -267,6 +288,7 @@ int main(int argc, char **argv)
             BOOL   *ScoreOnly   Score an existing alignment
             BOOL   *showMatches Show matches in alignment
             BOOL   *doRaw       Read raw PIR files
+            BOOL   *doFasta     Read FASTA PIR files
    Returns: BOOL                Success?
 
    Parse the command line
@@ -280,12 +302,13 @@ int main(int argc, char **argv)
    11.03.15 Added showMatches
    18.09.15 Only needs one argument for -s ScoreOnly
    11.07.16 Added -r and doRaw
+   05.09.25 Added -f and doFasta
 */
 BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty, 
                   int *ExtPenalty, BOOL *verbose, char *mdmfile, 
                   char *infile1, char *infile2, int *quiet,
                   int *AlignStyle, char *AlignFile, BOOL *ScoreOnly,
-                  BOOL *showMatches, BOOL *doRaw)
+                  BOOL *showMatches, BOOL *doRaw, BOOL *doFasta)
 {
    BOOL UserGapPenalty = FALSE;
    BOOL UserExtPenalty = FALSE;
@@ -360,6 +383,9 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
          case 'r':
             *doRaw = TRUE;
             break;
+         case 'f':
+            *doFasta = TRUE;
+            break;
          default:
             return(FALSE);
             break;
@@ -409,6 +435,7 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
    23.08.10 Added -s
    11.03.15 Added -d
    11.07.16 Added -r
+   05.09.25 Added -f
 */
 void Usage(void)
 {
@@ -436,20 +463,25 @@ information; use with -p)\n");
    fprintf(stderr,"       -d          Display matches in alignment\n");
    fprintf(stderr,"       -p <file>   Write a PIR format alignment \
 file\n");
-   fprintf(stderr,"       <file1>     First PIR sequence file\n");
-   fprintf(stderr,"       <file2>     Second PIR sequence file\n");
-   fprintf(stderr,"       -s          Score an existing alignment \
-(in PIR format)\n");
+   fprintf(stderr,"       <file1>     First sequence file \
+(default PIR)\n");
+   fprintf(stderr,"       <file2>     Second sequence file \
+(default PIR)\n");
+   fprintf(stderr,"       -f          Read FASTA rather than PIR format \
+files\n");
    fprintf(stderr,"       -r          Read a PIR format as a raw file \
 - no special\n");
    fprintf(stderr,"                   handling of non-alpha \
 characters\n");
+   fprintf(stderr,"       -s          Score an existing alignment \
+(in PIR format)\n");
    
    fprintf(stderr,"\nNW is a simple Needleman and Wunsch sequence \
 alignment program taking\n");
-   fprintf(stderr,"PIR format input files. Only the first sequence in \
-each file is aligned,\n");
-   fprintf(stderr,"but multiple chains will be handled.\n");
+   fprintf(stderr,"PIR of FASTA format input files. Only the first \
+sequence each file\n");
+   fprintf(stderr," is aligned, but in PIR files, multiple chains will \
+be handled.\n");
 
    fprintf(stderr,"\nThe PIR format allows punctuation characters to \
 indicate incomplete\n");
@@ -473,7 +505,7 @@ in V3.12\n\n");
 /*>BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty, 
                     int ExtPenalty, char *mdmfile, BOOL verbose, 
                     int quiet, int AlignStyle, FILE *out, 
-                    BOOL showMatches, BOOL doRaw)
+                    BOOL showMatches, BOOL doRaw, BOOL doFasta)
    ---------------------------------------------------------------------
    Main routine which does the alignment work. Reads the sequence files
    and calls the alignment code for each pair of chains in turn.
@@ -502,14 +534,17 @@ in V3.12\n\n");
             Initialized TotalNumId
    18.09.15 Removed unused variable
    11.07.16 Added raw PIR handling
+   05.09.25 Added FASTA handling
 */
 BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty, 
                  int ExtPenalty, char *mdmfile, BOOL verbose, int quiet,
-                 int AlignStyle, FILE *out, BOOL showMatches, BOOL doRaw)
+                 int AlignStyle, FILE *out, BOOL showMatches, BOOL doRaw,
+                 BOOL doFasta)
 {
    char       *seq1[MAXCHAIN],              /* Sequences to align       */
               *seq2[MAXCHAIN],
-              *align1, *align2;             /* Aligned sequences        */
+              *align1=NULL, *align2=NULL,   /* Aligned sequences        */
+              *seqBuffer=NULL;
    BOOL       error, punct;
    SEQINFO    SeqInfo1,
               SeqInfo2;
@@ -544,37 +579,70 @@ BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty,
               TotalNDelG = 0;
    STRINGLIST *Alignments1 = NULL,
               *Alignments2 = NULL;
+
+   if(doFasta)
+   {
+      if((seqBuffer = (char *)malloc(MAXSEQBUFF * sizeof(char)))==NULL)
+      {
+         fprintf(stderr,"Error: No memory for sequence buffer.\n");
+         return(FALSE);
+      }
+      INITSEQINFO(SeqInfo1);
+      INITSEQINFO(SeqInfo2);
+   }
    
    /* Read sequences                                                    */
-   if(doRaw)
+   if(doFasta)
+   {
+      nchain1 = 1;
+      seq1[0] = blReadFASTAExtBuffer(in1, SeqInfo1.name, 160,
+                                     seqBuffer, MAXSEQBUFF);
+      strncpy(SeqInfo1.code, SeqInfo1.name, 15);
+      SeqInfo1.code[15] = '\0';
+      error = ((seq1[0] == NULL)||(seq1[0][0] == '\0'))?TRUE:FALSE;
+   }
+   else if(doRaw)
    {
       nchain1 = blReadRawPIR(in1,seq1,MAXCHAIN,TRUE,&SeqInfo1,&error);
    }
    else
    {
-      nchain1 = blReadPIR(in1,FALSE,seq1,MAXCHAIN,&SeqInfo1,&punct,&error);
+      nchain1 = blReadPIR(in1,FALSE,seq1,MAXCHAIN,&SeqInfo1,&punct,
+                          &error);
    }
    
    if(error)
    {
-      fprintf(stderr,"Error: Unable to read PIR sequence file. \
+      fprintf(stderr,"Error: Unable to read sequence file. \
 No memory\n");
+      FREE(seqBuffer);
       return(FALSE);
    }
-   
-   if(doRaw)
+
+   if(doFasta)
+   {
+      nchain2 = 1;
+      seq2[0] = blReadFASTAExtBuffer(in2, SeqInfo2.name, 160,
+                                     seqBuffer, MAXSEQBUFF);
+      strncpy(SeqInfo2.code, SeqInfo2.name, 15);
+      SeqInfo2.code[15] = '\0';
+      error = ((seq2[0] == NULL)||(seq2[0][0] == '\0'))?TRUE:FALSE;
+   }
+   else if(doRaw)
    {
       nchain2 = blReadRawPIR(in2,seq2,MAXCHAIN,TRUE,&SeqInfo2,&error);
    }
    else
    {
-      nchain2 = blReadPIR(in2,FALSE,seq2,MAXCHAIN,&SeqInfo2,&punct,&error);
+      nchain2 = blReadPIR(in2,FALSE,seq2,MAXCHAIN,&SeqInfo2,&punct,
+                          &error);
    }
    
    if(error)
    {
-      fprintf(stderr,"Error: Unable to read PIR sequence file. \
+      fprintf(stderr,"Error: Unable to read sequence file. \
 No memory\n");
+      FREE(seqBuffer);
       return(FALSE);
    }
 
@@ -605,6 +673,7 @@ No memory\n");
    if(align1==NULL || align2==NULL)
    {
       fprintf(stderr,"Error: No memory for alignment storage\n");
+      FREE(seqBuffer);
       return(FALSE);
    }
 
@@ -688,6 +757,7 @@ aligned\n\n", MIN(nchain1, nchain2));
             free(seq1[chain]);
          for(chain=0; chain<nchain2; chain++)
             free(seq2[chain]);
+         FREE(seqBuffer);
          return(FALSE);
       }
    }
@@ -702,6 +772,7 @@ aligned\n\n", MIN(nchain1, nchain2));
       {
          fprintf(stderr,"Error: %s sequence is of zero length\n",
                  ((len1==0)?"First":"Second"));
+         FREE(seqBuffer);
          return(FALSE);
       }
       
@@ -711,6 +782,7 @@ aligned\n\n", MIN(nchain1, nchain2));
       if(!score)
       {
          fprintf(stderr,"Error: No memory for alignment matrix\n");
+         FREE(seqBuffer);
          return(FALSE);
       }
       /* Calculate various scores                                       */
@@ -897,6 +969,7 @@ IDNOTAILTOT: %.2f%%\n",
       free(seq2[chain]);
    free(align1);
    free(align2);
+   FREE(seqBuffer);
 
    return(TRUE);
 }
