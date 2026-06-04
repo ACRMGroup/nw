@@ -3,11 +3,11 @@
    Program:    nw
    File:       nw.c
    
-   Version:    V3.17
-   Date:       05.09.25
+   Version:    V3.18
+   Date:       04.06.26
    Function:   Do Needleman & Wunsch sequence alignment
    
-   Copyright:  (c) Dr. Andrew C. R. Martin / UCL 1990-2025
+   Copyright:  (c) Dr. Andrew C. R. Martin / UCL 1990-2026
    Author:     Dr. Andrew C. R. Martin
    Address:    Biomolecular Structure & Modelling Unit,
                Department of Biochemistry & Molecular Biology,
@@ -91,6 +91,7 @@
    V3.15 18.09.15   Corrected to take just one argument with -s
    V3.16 11.07.16   Now uses new bioplib calls
    V3.17 05.09.25   Added -f for FASTA files
+   V3.18 04.06.26   Added output of number of mismatches (i.e. mutations)
 
 *************************************************************************/
 /* Includes
@@ -110,8 +111,8 @@
 /************************************************************************/
 /* Defines and macros
 */
-#define VERSION  "3.17"
-#define YEAR     "2025"
+#define VERSION  "3.18"
+#define YEAR     "2026"
 #define MDMFILE  "mdm78.mat"
 #define DEF_GAPPEN 10
 #define DEF_EXTPEN 2
@@ -436,15 +437,20 @@ BOOL ParseCmdLine(int argc, char **argv, BOOL *identity, int *GapPenalty,
    11.03.15 Added -d
    11.07.16 Added -r
    05.09.25 Added -f
+   03.06.26 Tidied and add abYinformatics
 */
 void Usage(void)
 {
-   fprintf(stderr,"\nNW %s (c) 1990-%s Dr. Andrew C.R. Martin, \
-NIMR/SciTech Software/UCL/Reading\n", VERSION, YEAR);
+   fprintf(stderr,"\nNW %s (c) 1990-%s Prof. Andrew C.R. Martin,\n",
+           VERSION, YEAR);
+   fprintf(stderr,"            NIMR/SciTech Software/UCL/Reading\
+/abYinformatics\n");
 
    fprintf(stderr,"\nUsage: nw [-g n][-x n][-i][-m <matrix>][-v]\
-[-q[q]][-p <file>][-d][-r] <file1> <file2>\n");
-   fprintf(stderr," -or-  nw -s <aligned-file>\n");
+[-q[q]][-p <file>][-d][-r]\n");
+   fprintf(stderr,"          <file1> <file2>\n");
+   fprintf(stderr,"  -or-\n");
+   fprintf(stderr,"       nw -s <aligned-file>\n\n");
    fprintf(stderr,"       -g <n>      Specify the gap penalty\n");
    fprintf(stderr,"                   [Default: %d for matrix or 1 for \
 identity matrix]\n", DEF_GAPPEN);
@@ -535,6 +541,7 @@ in V3.12\n\n");
    18.09.15 Removed unused variable
    11.07.16 Added raw PIR handling
    05.09.25 Added FASTA handling
+   03.06.26 Added HAMMING distance
 */
 BOOL DoAlignment(FILE *in1, FILE *in2, BOOL identity, int GapPenalty, 
                  int ExtPenalty, char *mdmfile, BOOL verbose, int quiet,
@@ -902,6 +909,8 @@ aligned\n\n", MIN(nchain1, nchain2));
 %.2f%%\n",     (REAL)100.0 * (REAL)NumId / (REAL)NumAligned);
          printf("Identity over sequence 1               IDFIRST: \
 %.2f%%\n",     (REAL)100.0 * (REAL)NumId / (REAL)len1);
+         printf("Hamming distance (number of mutations) HAMMING: \
+%d\n",         align_len-NumId);
          printf("Deletions in sequence 1: residues(sites) NDELS: \
 %d (%d)\n", ndel, ndelg);
          printf("Insertions in sequence 1: residues(sites) NINS: \
